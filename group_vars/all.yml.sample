@@ -1,0 +1,26 @@
+# Restic repository configuration
+restic_repo: "sftp:u123456@your-storagebox.de:/backups/restic"
+# restic_password should be stored in Ansible Vault for security!
+restic_password: "SuperSecurePassword"
+
+# Backup source directories
+# Define backup_sources as a list, even for a single source
+backup_sources:
+  - "/srv/backup"
+#   - "/etc"
+
+# Retention policy (customize as needed)
+restic_retention:
+  keep_daily: 7
+  keep_weekly: 1
+  keep_monthly: 1
+
+# Gotify notification settings
+gotify_enabled: true
+gotify_url: "https://gotify.example.com/message"
+gotify_token: "your_token_here" 
+gotify_priority: 5
+gotify_title: "Restic Backup"
+
+# Path to the SSH private key for Hetzner Storage Box (on the Ansible control machine)
+hetzner_storagebox_key: "/path/to/your/private/key"

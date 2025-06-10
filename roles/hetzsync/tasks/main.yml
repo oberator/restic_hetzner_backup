@@ -1,0 +1,159 @@
+- name: Extract hostname from restic_repo
+  ansible.builtin.set_fact:
+    storagebox_host: "{{ restic_repo | regex_replace('^sftp:[^@]+@([^:/]+).*$', '\\1') }}"
+  tags: security
+
+- name: Display added SSH fingerprint for verification
+  ansible.builtin.debug:
+    msg: "Storageboxhost: {{ storagebox_host }}"
+  tags: security
+
+- name: Ensure .ssh directory exists for root
+  ansible.builtin.file:
+    path: /root/.ssh
+    state: directory
+    mode: '0700'
+    owner: root
+    group: root
+  become: true
+  tags: security
+
+- name: Get Hetzner Storage Box SSH host key (plain hostname)
+  ansible.builtin.shell: |
+    ssh-keyscan {{ storagebox_host }} 2>/dev/null
+  register: ssh_host_key_plain
+  changed_when: false
+  failed_when: ssh_host_key_plain.rc != 0
+  tags: security
+
+- name: Add Storage Box SSH host key (plain hostname) to root's known_hosts
+  ansible.builtin.known_hosts:
+    name: "{{ storagebox_host }}"
+    key: "{{ ssh_host_key_plain.stdout }}"
+    path: /root/.ssh/known_hosts
+    hash_host: yes
+    state: present
+  become: true
+  tags: security
+
+- name: Get Hetzner Storage Box SSH host key
+  ansible.builtin.shell: |
+    ssh-keyscan -p 23 {{ storagebox_host }} 2>/dev/null
+  register: ssh_host_key
+  changed_when: false
+  failed_when: ssh_host_key.rc != 0
+  tags: security
+
+- name: Add Storage Box SSH host key to root's known_hosts
+  ansible.builtin.known_hosts:
+    name: "[{{ storagebox_host }}]:23"
+    key: "{{ ssh_host_key.stdout }}"
+    path: /root/.ssh/known_hosts
+    hash_host: yes
+    state: present
+  become: true
+  tags: security
+
+- name: Display added SSH fingerprint for verification
+  ansible.builtin.debug:
+    msg: "Added Storage Box SSH fingerprint: {{ ssh_host_key.stdout | regex_replace('^.*ssh-rsa\\s+([^ ]+).*$', '\\1') | b64decode | hash('sha256') }}"
+  tags: security
+
+- name: Ensure required packages are installed
+  ansible.builtin.package:
+    name:
+      - restic
+      - curl
+      - jq
+    state: present
+  become: true
+  tags: packages
+
+- name: Ensure /var/log exists for restic backup logs
+  ansible.builtin.file:
+    path: /var/log/restic_backup
+    state: directory
+    mode: '0755'
+  become: true
+  tags: logs
+
+- name: Create Restic environment file
+  ansible.builtin.template:
+    src: restic.env.j2
+    dest: /etc/restic.env
+    mode: '0600'
+  become: true
+  tags: config
+
+- name: Create backup script with Gotify error handling
+  ansible.builtin.template:
+    src: backup.sh.j2
+    dest: /usr/local/bin/restic-backup.sh
+    mode: '0750'
+    backup: yes
+  become: true
+  tags: script
+
+- name: Create cronjob for daily restic backup at 02:00
+  ansible.builtin.cron:
+    name: "daily restic backup"
+    user: root
+    job: "/usr/local/bin/restic-backup.sh >> /var/log/restic_backup/restic-backup.log 2>&1"
+    minute: "0"
+    hour: "2"
+  tags: cron
+
+- name: Copy Hetzner Storage Box SSH key to remote
+  ansible.builtin.copy:
+    src: "{{ hetzner_storagebox_key }}"
+    dest: "/root/.ssh/hetzner_storagebox"
+    owner: root
+    group: root
+    mode: '0600'
+  become: true
+  tags: hetzner_key
+
+- name: Configure logrotate for restic-backup.log
+  ansible.builtin.copy:
+    dest: /etc/logrotate.d/restic-backup
+    content: |
+      /var/log/restic_backup/restic-backup.log {
+          daily
+          rotate 14
+          compress
+          missingok
+          notifempty
+          create 0640 root adm
+          dateext
+      }
+    owner: root
+    group: root
+    mode: '0644'
+  become: true
+  tags: logrotate
+
+- name: Ensure SSH config for Storage Box is present
+  ansible.builtin.copy:
+    dest: /root/.ssh/config
+    content: |
+      Host {{ storagebox_host }}
+        HostName {{ storagebox_host }}
+        Port 23
+        User {{ restic_repo | regex_replace('^sftp:([^@]+)@.*$', '\1') }}
+        IdentityFile /root/.ssh/hetzner_storagebox
+        IdentitiesOnly yes
+        StrictHostKeyChecking yes
+    owner: root
+    group: root
+    mode: '0600'
+  become: true
+  tags: hetzner_key
+
+- name: Ensure remote restic repository directory exists on Storage Box
+  ansible.builtin.shell: |
+    ssh -i /root/.ssh/hetzner_storagebox -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -p 23 \
+      {{ restic_repo | regex_replace('^sftp:([^@]+)@([^:/]+):.*$', '\1@\2') }} \
+      "mkdir -p '{{ restic_repo | regex_replace('^sftp:[^@]+@[^:/]+:(.*)$', '\1') }}'"
+  args:
+  become: true
+  tags: restic_repo_dir

@@ -1,0 +1,62 @@
+#!/bin/bash
+set -euo pipefail
+
+# Load environment variables for restic
+source /etc/restic.env
+
+# Always use the correct SSH key and options for restic
+export SSH_COMMAND="ssh -i /root/.ssh/hetzner_storagebox -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -p 23"
+
+# Function to log messages with timestamps
+log() {
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+}
+
+# Function to send Gotify notifications
+send_gotify() {
+  curl -sf -X POST "{{ gotify_url }}" \
+    -H "X-Gotify-Key: {{ gotify_token }}" \
+    -H "Content-Type: application/json" \
+    -d "$(jq -nc --arg t "$1" --arg m "$2" --argjson p {{ gotify_priority }} '{title: $t, message: $m, priority: $p}')"
+}
+
+# Get backup sources from Ansible
+backup_sources='{{ backup_sources | to_json }}'
+mapfile -t sources < <(jq -r '.[]' <<< "$backup_sources")
+
+# Perform backups
+start_time=$(date +%s)
+
+# Check if the restic repository exists, if not, initialize it
+if ! restic snapshots > /dev/null 2>&1; then
+  log "Restic repository not found. Initializing..."
+  if ! restic init; then
+    send_gotify "Restic Init Fehler" "Initialisierung des Repositories fehlgeschlagen auf $(hostname)"
+    exit 1
+  fi
+  log "Restic repository initialized."
+fi
+
+# Backup each source
+for src in "${sources[@]}"; do
+  log "Backing up: $src"
+  if ! restic backup "$src"; then
+    send_gotify "Restic Backup Fehler" "Backup von $src fehlgeschlagen auf $(hostname)"
+    exit 1
+  fi
+done
+
+# Prune old backups
+log "Pruning old backups..."
+if ! restic forget --prune \
+  --keep-daily {{ restic_retention.keep_daily }} \
+  --keep-weekly {{ restic_retention.keep_weekly }} \
+  --keep-monthly {{ restic_retention.keep_monthly }}; then
+  send_gotify "Restic Prune Fehler" "Prune fehlgeschlagen auf $(hostname)"
+  exit 1
+fi
+
+# Success notification
+duration=$(($(date +%s) - start_time))
+send_gotify "{{ gotify_title }}" "Backup erfolgreich auf $(hostname) in ${duration}s"
+log "Backup completed in ${duration} seconds."

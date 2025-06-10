@@ -1,0 +1,6 @@
+---
+- name: Hetzner Backup Playbook
+  hosts: servers
+  become: true
+  roles:
+    - hetzsync
