@@ -75,6 +75,58 @@ restic -r sftp:<username>@<your-storagebox>.de:backups/restic/<hostname> snapsho
 restic -r sftp:<username>@<your-storagebox>.de:backups/restic/<hostname> restore latest --target /restore/path
 ```
 
+## Manual Restic Operations
+
+For manual interaction with your restic repository, SSH into the target server and use the following commands:
+
+### Setup
+```bash
+# SSH into your target server
+ssh your-server
+
+# Load the restic environment variables (required for all commands)
+# This has to be done as superuser (`sudo su`)
+source /etc/restic.env
+```
+
+### View Snapshots
+```bash
+# List all snapshots
+restic snapshots
+```
+
+### View Backup Contents
+```bash
+# List files in the latest snapshot
+restic ls latest
+
+# List files in a specific snapshot
+restic ls <snapshot-id>
+```
+
+### Repository Management
+```bash
+# Check repository integrity
+restic check
+
+# View repository statistics
+restic stats
+
+# View statistics for a specific snapshot
+restic stats <snapshot-id>
+```
+
+### Manual Backup
+```bash
+# Run a manual backup of all configured sources
+/usr/local/bin/restic-backup.sh
+
+# Or backup a specific directory manually
+source /etc/restic.env
+restic backup /path/to/directory
+```
+
+
 ## References
 - [Hetzner Storage Box Docs](https://docs.hetzner.com/de/storage/storage-box/access/access-ssh-rsync-borg#restic)
 - [restic Documentation](https://restic.readthedocs.io/)

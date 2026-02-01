@@ -58,5 +58,48 @@ fi
 
 # Success notification
 duration=$(($(date +%s) - start_time))
-send_gotify "{{ gotify_title }}" "Backup erfolgreich auf $(hostname) in ${duration}s"
+
+# Get snapshot list
+snapshots=$(restic snapshots --json | jq -r '.[] | "\(.time[:19]) \(.paths[0]) \(.id)"' | head -20)
+
+# Get latest repository contents
+latest_files=$(restic ls latest --json | jq -r '.[] | "\(.type): \(.path)"' | head -30)
+
+# Format message with snapshot list and file list
+message="Backup erfolgreich auf $(hostname) in ${duration}s
+
+=== Snapshots (latest 20) ===
+${snapshots}
+
+=== Latest Files (first 30) ===
+${latest_files}"
+
+send_gotify "{{ gotify_title }}" "${message}"
 log "Backup completed in ${duration} seconds."
+
+# ============================================
+# Manual Restic Commands (for reference)
+# ============================================
+# To manually interact with restic, SSH into the server and run:
+#
+# source /etc/restic.env
+#
+# List all snapshots:
+# restic snapshots
+#
+# List files in latest snapshot:
+# restic ls latest
+#
+# List files in specific snapshot:
+# restic ls <snapshot-id>
+#
+# Restore from snapshot:
+# restic restore <snapshot-id> --target /restore/path
+#
+# Check repository integrity:
+# restic check
+#
+# View statistics:
+# restic stats
+#
+# ============================================
