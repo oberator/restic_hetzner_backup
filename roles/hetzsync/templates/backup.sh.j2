@@ -59,11 +59,11 @@ fi
 # Success notification
 duration=$(($(date +%s) - start_time))
 
-# Get snapshot list
-snapshots=$(restic snapshots --json | jq -r '.[] | "\(.time[:19]) \(.paths[0]) \(.id)"' | head -20)
+# Get snapshot list (date, path, short ID)
+snapshots=$(restic snapshots --json | jq -r '.[] | "\(.time[:10])  \(.paths[0])  \(.short_id)"' | head -20)
 
 # Get latest repository contents
-latest_files=$(restic ls latest --json | jq -r '.[] | "\(.type): \(.path)"' | head -30)
+latest_files=$(restic ls latest --json | jq -r 'select(.type == "file" or .type == "dir") | "\(.type): \(.path)"' | head -30)
 
 # Format message with snapshot list and file list
 message="Backup erfolgreich auf $(hostname) in ${duration}s
